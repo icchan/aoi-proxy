@@ -20,7 +20,7 @@ type AdminHandler struct {
 }
 
 func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	log.Println("[Admin] serving ", req.URL, " env: ", ah.Target.Environment)
+	log.Printf("[Admin] serving %s env: %s\n", req.URL, ah.Target.Environment)
 
 	fmt.Fprintf(w, "I am the admin api! ENV is %s\n", ah.Target.Environment)
 
@@ -32,7 +32,7 @@ func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	fmt.Fprintf(w, "Now I switched to %s\n", ah.Target.Environment)
-	log.Println("[Admin] switched to: %s\n", ah.Target.Environment)
+	log.Printf("[Admin] switched to: %s\n", ah.Target.Environment)
 }
 
 type BlueGreenHandler struct {
@@ -53,16 +53,8 @@ func makeBlueGreen(blueString string, greenString string) *BlueGreenHandler {
 	return &bgh
 }
 
-func (bgh *BlueGreenHandler) makeInverseHandler() *BlueGreenHandler {
-	return &BlueGreenHandler{
-		Environment: GREEN, // TODO need to share this flag too
-		Blue:        bgh.Green,
-		Green:       bgh.Blue,
-	}
-}
-
 func (bgh *BlueGreenHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	log.Println("[Blue Green] serving ", req.URL, " from: ", bgh.Environment)
+	log.Println("[BlueGreen] serving ", req.URL, " from: ", bgh.Environment)
 
 	if bgh.Environment == BLUE {
 		bgh.Blue.ServeHTTP(w, req)
@@ -73,6 +65,20 @@ func (bgh *BlueGreenHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	}
 }
 
+type InverseHandler struct {
+	Target *BlueGreenHandler
+}
+
+func (ih *InverseHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	log.Println("[Inverse] serving ", req.URL, " from: NOT ", ih.Target.Environment)
+
+	if ih.Target.Environment == BLUE {
+		ih.Target.Green.ServeHTTP(w, req)
+	} else {
+		ih.Target.Blue.ServeHTTP(w, req)
+	}
+}
+
 func main() {
 	// command line flags
 	blueBackend := flag.String("blue", "", "url to blue environment")
@@ -80,24 +86,38 @@ func main() {
 	flag.Parse()
 
 	bgHandler := makeBlueGreen(*blueBackend, *greenBackend)
-	//testHandler := bgHandler.makeInverseHandler()
+	testHandler := InverseHandler{Target: bgHandler}
+	adminHandler := AdminHandler{Target: bgHandler}
 
 	wg := &sync.WaitGroup{}
+
+	// Start the main handler
 	wg.Add(1)
 	go func() {
-		adminPort := ":5000"
-		log.Println("[Admin] Started listening on ", adminPort)
+		blueGreenPort := ":5051"
+		log.Println("[BlueGreen] Started listening on ", blueGreenPort)
 
-		log.Fatal(http.ListenAndServe(adminPort, &AdminHandler{bgHandler}))
+		log.Fatal(http.ListenAndServe(blueGreenPort, bgHandler))
 		wg.Done()
 	}()
 
+	// Start the inverse handler
 	wg.Add(1)
 	go func() {
-		blueGreenPort := ":5050"
-		log.Println("[Blue Green] Started listening on ", blueGreenPort)
+		inversePort := ":5150"
+		log.Println("[Inverse] Started listening on ", inversePort)
 
-		log.Fatal(http.ListenAndServe(blueGreenPort, bgHandler))
+		log.Fatal(http.ListenAndServe(inversePort, &testHandler))
+		wg.Done()
+	}()
+
+	// Start the admin handler
+	wg.Add(1)
+	go func() {
+		adminPort := ":5555"
+		log.Println("[Admin] Started listening on ", adminPort)
+
+		log.Fatal(http.ListenAndServe(adminPort, &adminHandler))
 		wg.Done()
 	}()
 
