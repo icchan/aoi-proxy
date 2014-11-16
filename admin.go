@@ -10,7 +10,8 @@ import (
 
 // Handler for admin api
 type AdminHandler struct {
-	Target *BlueGreenHandler
+	Target      *BlueGreenHandler
+	FileHandler http.Handler
 }
 
 // response models
@@ -22,11 +23,17 @@ type AdminResponse struct {
 	Green   string `json:"green,omitempty"`
 }
 
+func NewAdminHandler(bg *BlueGreenHandler) *AdminHandler {
+	return &AdminHandler{Target: bg, FileHandler: http.FileServer(http.Dir("www"))}
+}
+
 func (ah *AdminHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	log.Printf("[Admin] serving %s", req.URL)
 
-	if req.URL.String() == "/" {
+	if req.URL.String() == "/" && ah.FileHandler != nil {
 		// serve the webpage
+		ah.FileHandler.ServeHTTP(w, req)
+		return
 	}
 
 	paths := strings.Split(req.URL.String(), "/")

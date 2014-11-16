@@ -14,14 +14,14 @@ func main() {
 	greenBackend := flag.String("green", "http://localhost:7002", "url to green environment")
 
 	blueGreenPort := flag.String("main", ":8080", "listen address for main http handler")
-	inversePort := flag.String("alt", ":8181", "listen address for alternate/test http handler")
+	inversePort := flag.String("alt", ":8081", "listen address for alternate/test http handler")
 	adminPort := flag.String("admin", ":5000", "listen address for admin api")
 
 	flag.Parse()
 
-	bgHandler := aoiproxy.MakeBlueGreen(*blueBackend, *greenBackend)
+	bgHandler := aoiproxy.NewBlueGreen(*blueBackend, *greenBackend)
 	testHandler := aoiproxy.InverseHandler{Target: bgHandler}
-	adminHandler := aoiproxy.AdminHandler{Target: bgHandler}
+	adminHandler := aoiproxy.NewAdminHandler(bgHandler)
 
 	wg := &sync.WaitGroup{}
 
@@ -48,7 +48,7 @@ func main() {
 	go func() {
 		log.Println("[Admin] Started listening on", *adminPort)
 
-		log.Fatal(http.ListenAndServe(*adminPort, &adminHandler))
+		log.Fatal(http.ListenAndServe(*adminPort, adminHandler))
 		wg.Done()
 	}()
 
